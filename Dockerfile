@@ -10,4 +10,4 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /bellator
 COPY --from=COMPILATION /build/nanobell .
-CMD ["./nanobell"]
+CMD ["/bellator/nanobell"]

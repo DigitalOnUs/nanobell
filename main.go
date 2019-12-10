@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/DigitalOnUs/nanobell/gh"
 )
+
+// expected output
+// title	comments	open-days	adds	dels	files	number	coupling average
 
 // environment data
 var (
@@ -50,10 +55,31 @@ func main() {
 		os.Exit(1)
 	}()
 
-	cfg := gh.Config{envs[TOKEN], envs[REPO]}
+	cfg := gh.Config{Token: envs[TOKEN], Repo: envs[REPO]}
 
-	if err := gh.GetPRDetailsWithContext(ctx, &cfg, envs[PULL]); err != nil {
-		log.Println(err)
-		os.Exit(1)
-	}
+	errors := make(chan error)
+	// ideally this is ready to support multiple requests in pipeline
+	pool := gh.GetPRDetailsWithContext(ctx, &cfg, errors, envs[PULL])
+
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	go func() {
+		for err := range errors {
+			fmt.Println(err)
+		}
+		wg.Done()
+	}()
+
+	go func() {
+		for entry := range pool {
+			fmt.Println(entry)
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
+	fmt.Println("ya se acabo")
+
 }

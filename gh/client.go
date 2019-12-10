@@ -18,6 +18,18 @@ type Config struct {
 	Repo  string
 }
 
+//FeatureEntry feature vector
+type FeatureEntry struct {
+	Title           string  `json:"title"`
+	Comments        int     `json:"comments"` // will be 0
+	OpenDays        int     `json:"open-days"`
+	Adds            int     `json:"adds"`
+	Dels            int     `json:"dels"`
+	Files           int     `json:"files"`
+	Number          int     `json:"number"`
+	CouplingAverage float64 `json:"coupling average"`
+}
+
 var (
 	//ErrInvalidRepoName Awful case where we got nothing
 	ErrInvalidRepoName = errors.New("Invalid repo name ")
@@ -35,10 +47,12 @@ func (cfg *Config) GetOwner() (owner, repo string, err error) {
 }
 
 //GetPRDetailsWithContext ctx, token , .... ids pr
-func GetPRDetailsWithContext(ctx context.Context, cfg *Config, ids ...string) (global error) {
+func GetPRDetailsWithContext(ctx context.Context, cfg *Config, errors chan error, ids ...string) <-chan FeatureEntry {
 	owner, repo, err := cfg.GetOwner()
+	queue := make(chan FeatureEntry)
+
 	if err != nil {
-		return err
+		errors <- err
 	}
 
 	ts := oauth2.StaticTokenSource(
@@ -48,39 +62,36 @@ func GetPRDetailsWithContext(ctx context.Context, cfg *Config, ids ...string) (g
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
 
-	fmt.Printf("%+v", client)
-
-	// pull requests ids
-	for _, id := range ids {
-		// owner , repo , id
-		number, err := strconv.Atoi(id)
-		if err != nil {
-
-			if global != nil {
-				global = fmt.Errorf("%v,%w", global, err)
-			} else {
-				global = err
+	go func(c chan FeatureEntry) {
+		defer close(c)
+		defer close(errors)
+		// pull requests ids
+		for _, id := range ids {
+			// owner , repo , id
+			number, err := strconv.Atoi(id)
+			if err != nil {
+				errors <- err
+				continue
 			}
 
-			continue
-		}
-
-		// worst case if we can get the info
-		pr, response, err := client.PullRequests.Get(ctx, owner, repo, number)
-		if err != nil {
-			if global != nil {
-				global = fmt.Errorf("%v, %w", global, err)
-			} else {
-				global = err
+			// worst case if we can get the info
+			pr, response, err := client.PullRequests.Get(ctx, owner, repo, number)
+			if err != nil {
+				errors <- err
+				continue
 			}
+
+			log.Printf("%+v\n", response)
+
+			entry := FeatureEntry{
+				Title:    pr.GetTitle(),
+				Comments: pr.GetComments(),
+			}
+
+			/* TO DO GET FILE LIST FROM BELLATOR*/
+			c <- entry
 		}
+	}(queue)
 
-		log.Printf("response: %+v\n", response)
-		log.Printf("%+v\n", pr)
-
-		// now get all files (statistics)
-
-	}
-
-	return
+	return queue
 }
